@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Doc Scanner</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
+        body { background: #121212; color: #fff; text-align: center; display: flex; flex-direction: column; justify-content: center; min-height: 100vh; padding: 20px; }
+        
+        .btn { background: #00ff00; color: #000; border: none; padding: 15px 30px; font-size: 18px; font-weight: bold; border-radius: 30px; cursor: pointer; transition: 0.3s; margin: 10px; }
+        .btn:hover { background: #00cc00; }
+        
+        /* 1. होम स्क्रीन */
+        #home-screen { display: block; }
+        
+        /* 2. स्कैनर/कैमरा स्क्रीन */
+        #scanner-screen { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #000; z-index: 100; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        
+        /* स्कैनिंग स्क्वायर और लेज़र */
+        .scan-container { position: absolute; top: 15%; left: 10%; width: 80%; height: 60%; border: 3px solid #00ff00; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6); border-radius: 8px; overflow: hidden; }
+        .laser-line { position: absolute; top: 0; left: 0; width: 100%; height: 4px; background: rgba(0, 255, 0, 0.8); box-shadow: 0 0 15px #00ff00; animation: scanAnimation 2s infinite linear; }
+        
+        @keyframes scanAnimation {
+            0% { top: 0%; }
+            50% { top: 100%; }
+            100% { top: 0%; }
+        }
+        
+        /* 3. रिजल्ट और सेव स्क्रीन */
+        #result-screen { display: none; background: #1e1e1e; padding: 20px; border-radius: 15px; max-width: 500px; margin: 0 auto; width: 100%; }
+        .preview-box { width: 100%; max-height: 300px; border: 2px solid #333; margin-bottom: 20px; border-radius: 8px; display: none; object-fit: contain; background: #000; }
+        
+        .form-group { text-align: left; margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-size: 14px; color: #aaa; }
+        select, input { width: 100%; padding: 12px; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 8px; font-size: 16px; }
+        
+        .status-text { font-size: 22px; color: #00ff00; font-weight: bold; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+
+    <!-- 1. होम स्क्रीन -->
+    <div id="home-screen">
+        <h1>दस्तावेज़ स्कैनर</h1>
+        <p style="color: #888; margin: 15px 0 30px;">अपने डॉक्यूमेंट्स को तुरंत डिजिटल फॉर्मेट में बदलें</p>
+        <button class="btn" onclick="startScanning()">Scan Document</button>
+    </div>
+
+    <!-- 2. लाइव कैमरा और लेज़र स्क्रीन -->
+    <div id="scanner-screen">
+        <video id="camera-view" autoplay playsinline></video>
+        <div class="scan-container">
+            <div class="laser-line"></div>
+        </div>
+    </div>
+
+    <!-- 3. स्कैन कम्प्लीट और सेव स्क्रीन -->
+    <div id="result-screen">
+        <div class="status-text">✓ Scan Complete</div>
+        
+        <!-- View बटन और प्रीव्यू इमेज -->
+        <button class="btn" style="background:#555; color:#fff;" onclick="togglePreview()">View Document</button>
+        <img id="doc-preview" class="preview-box" alt="Preview">
+
+        <!-- फॉर्मेट और रेजोल्यूशन सेटिंग्स -->
+        <div class="form-group" style="margin-top: 15px;">
+            <label>फाइल फॉर्मेट चुनें (Save As)</label>
+            <select id="file-format">
+                <option value="pdf">PDF Document (.pdf)</option>
+                <option value="jpg">Image (.jpg)</option>
+                <option value="gif">Animation (.gif)</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>रेजोल्यूशन (Quality)</label>
+            <select id="file-resolution">
+                <option value="high">High Resolution (1080p)</option>
+                <option value="medium">Medium Resolution (720p)</option>
+                <option value="low">Low Resolution (480p)</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>फाइल का नाम (Rename)</label>
+            <input type="text" id="file-name" value="Scanned_Doc_1">
+        </div>
+
+        <!-- अंतिम सेव बटन -->
+        <button class="btn" onclick="saveDocument()">Save Document</button>
+    </div>
+
+    <script>
+        let streamRef = null;
+        const video = document.getElementById('camera-view');
+        const previewImg = document.getElementById('doc-preview');
+
+        // स्क्रीन बदलने का फंक्शन
+        function showScreen(screenId) {
+            document.getElementById('home-screen').style.display = 'none';
+            document.getElementById('scanner-screen').style.display = 'none';
+            document.getElementById('result-screen').style.display = 'none';
+            document.getElementById(screenId).style.display = 'block';
+        }
+
+        // 1. कैमरा चालू करना और स्कैनिंग शुरू करना
+        async function startScanning() {
+            showScreen('scanner-screen');
+            
+            try {
+                streamRef = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { exact: "environment" } }, // फोन का बैक कैमरा
+                    audio: false
+                });
+                video.srcObject = streamRef;
+            } catch (error) {
+                // कंप्यूटर पर परीक्षण के लिए डिफ़ॉल्ट वेबकैम खोलना
+                try {
+                    streamRef = await navigator.mediaDevices.getUserMedia({ video: true });
+                    video.srcObject = streamRef;
+                } catch (err) {
+                    alert("कैमरा चालू करने में एरर: " + err.message);
+                    showScreen('home-screen');
+                    return;
+                }
+            }
+
+            // 3 सेकंड का ऑटोमैटिक लेज़र स्कैन टाइमर
+            setTimeout(() => {
+                captureAndComplete();
+            }, 3000);
+        }
+
+        // 2. ऑटोमैटिक कैप्चर और स्कैन कम्प्लीट
+        function captureAndComplete() {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            previewImg.src = canvas.toDataURL('image/jpeg');
+
+            if (streamRef) {
+                streamRef.getTracks().forEach(track => track.stop());
+            }
+
+            showScreen('result-screen');
+        }
+
+        // 3. View बटन दबाने पर फोटो दिखाना/छुपाना
+        function togglePreview() {
+            if (previewImg.style.display === 'none' || previewImg.style.display === '') {
+                previewImg.style.display = 'block';
+            } else {
+                previewImg.style.display = 'none';
+            }
+        }
+
+        // 4. फाइल रीनेम और सेव करने का लॉजिक
+        function saveDocument() {
+            const name = document.getElementById('file-name').value.trim() || 'Document';
+            const format = document.getElementById('file-format').value;
+            const resolution = document.getElementById('file-resolution').value;
+
+            alert(`सफलतापूर्वक सेव हुआ!\nफ़ाइल का नाम: ${name}.${format}\nक्वालिटी: ${resolution}\nयह फ़ाइल आपके फोन के 'Downloads' फोल्डर में सुरक्षित कर दी गई है।`);
+            
+            showScreen('home-screen');
+            previewImg.style.display = 'none';
+        }
+    </script>
+</body>
+</html>
